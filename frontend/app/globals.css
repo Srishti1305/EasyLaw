@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: #1c2128;
+  --color-paper: #f7f4ee;
+  --color-brass: #a9782f;
+  --color-brass-light: #c99a4f;
+  --color-slate: #5b6472;
+  --color-sage: #5f7a61;
+  --color-rust: #a8503a;
+  --color-line: #ded8c8;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans), sans-serif;
+}
+
+.font-serif-display {
+  font-family: var(--font-serif), serif;
+}

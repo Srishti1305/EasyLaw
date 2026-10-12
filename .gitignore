@@ -1,0 +1,16 @@
+﻿node_modules/
+.next/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.env*.local
+legal-meeting-classifier/
+results/
+logs/
+uploads/
+*.mp3
+*.wav
+*.m4a
+*.pt
