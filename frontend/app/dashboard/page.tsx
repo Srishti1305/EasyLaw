@@ -124,6 +124,38 @@ setMeetings(meetingsRes.data);
     localStorage.removeItem('user');
     router.push('/login');
   };
+    const handleDelete = async (c: CaseRow) => {
+    const ok = window.confirm(
+      `Delete "${c.title}"?\n\nThis also deletes its documents and meeting notes and cannot be undone.`
+    );
+    if (!ok) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/api/cases/${c.id}`, { headers });
+
+      setCases((prev) => prev.filter((x) => x.id !== c.id));
+      setStats((prev) =>
+        prev
+          ? {
+              total_cases: prev.total_cases - 1,
+              open_cases: prev.open_cases - (c.status === 'open' ? 1 : 0),
+              total_documents: Math.max(0, prev.total_documents - c.document_count),
+            }
+          : prev
+      );
+
+      // refresh the meetings list, since its notes were deleted too
+      const meetingsRes = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/notetaker/notes?view=${viewMode}`,
+        { headers }
+      );
+      setMeetings(meetingsRes.data);
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to delete case');
+    }
+  };
 
   return (
     <main className="min-h-screen px-6 py-10 md:px-16">
@@ -246,6 +278,7 @@ setMeetings(meetingsRes.data);
                 <th className="pb-3 font-medium">Docs</th>
                 <th className="pb-3 font-medium">Filed</th>
                 {viewMode === 'all' && <th className="pb-3 font-medium">Lawyer</th>}
+                <th className="pb-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -270,6 +303,14 @@ setMeetings(meetingsRes.data);
                     {viewMode === 'all' && (
                       <td className="py-4 pr-4 text-[var(--color-slate)]">{c.lawyer_name || '—'}</td>
                     )}
+                    <td className="py-4 text-right">
+                      <button
+                        onClick={() => handleDelete(c)}
+                        className="text-sm text-[var(--color-rust)] hover:underline"
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

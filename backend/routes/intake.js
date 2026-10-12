@@ -156,5 +156,39 @@ router.get('/stats', verifyToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
+// DELETE /api/cases/:id → delete a case and everything attached to it
+router.delete('/cases/:id', verifyToken, async (req, res) => {
+  const { id } = req.params;
+  const isAdmin = req.user.role === 'admin';
+  const client = await pool.connect();
+
+  try {
+    // Only the owner (or an admin) may delete
+    const found = await client.query(
+      `SELECT id, created_by FROM cases WHERE id = $1`,
+      [id]
+    );
+    if (found.rows.length === 0) {
+      return res.status(404).json({ error: 'Case not found' });
+    }
+    if (!isAdmin && found.rows[0].created_by !== req.user.id) {
+      return res.status(403).json({ error: 'You can only delete your own cases' });
+    }
+
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM meeting_notes WHERE case_id = $1`, [id]);
+    await client.query(`DELETE FROM documents WHERE case_id = $1`, [id]);
+    await client.query(`DELETE FROM cases WHERE id = $1`, [id]);
+    await client.query('COMMIT');
+
+    res.json({ message: 'Case deleted', id });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error(err.message);
+    res.status(500).json({ error: 'Failed to delete case', details: err.message });
+  } finally {
+    client.release();
+  }
+});
 
 module.exports = router;
