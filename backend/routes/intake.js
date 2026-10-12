@@ -10,46 +10,83 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// POST /api/intake  → takes raw text, calls ML service, saves to DB
+// POST /api/intake  → structured client details + optional free text, saved to DB
 router.post('/intake', verifyToken, async (req, res) => {
-  const { text, title } = req.body;
+  const {
+    title, text,
+    client_name, client_phone, client_address, client_aadhaar,
+    opponent_name, case_type,
+  } = req.body;
 
-  if (!text) {
-    return res.status(400).json({ error: 'text is required' });
+  if (!client_name || !client_name.trim()) {
+    return res.status(400).json({ error: 'Client name is required' });
   }
 
+  // Validate phone (10 digits) if given
+  const phone = (client_phone || '').replace(/\D/g, '');
+  if (phone && phone.length !== 10) {
+    return res.status(400).json({ error: 'Mobile number must be 10 digits' });
+  }
+
+  // Aadhaar: accept 12 digits, store ONLY the last 4 (masked)
+  const aadhaarDigits = (client_aadhaar || '').replace(/\D/g, '');
+  if (aadhaarDigits && aadhaarDigits.length !== 12) {
+    return res.status(400).json({ error: 'Aadhaar must be 12 digits' });
+  }
+  const aadhaarLast4 = aadhaarDigits ? aadhaarDigits.slice(-4) : null;
+
+  const allowedTypes = ['civil', 'criminal', 'family', 'property', 'corporate', 'consumer', 'labour', 'other'];
+  const caseType = allowedTypes.includes(case_type) ? case_type : 'other';
+
   try {
-    // Step 1: Call the ML service to extract entities
-    const mlResponse = await axios.post(`${process.env.ML_SERVICE_URL}/intake/extract`, { text });
-    const entities = mlResponse.data.entities;
+    // Step 1: extract entities from the free-text description (if provided)
+    let entities = { people: [], organizations: [], dates: [], locations: [], money: [], misc: [] };
+    if (text && text.trim()) {
+      const mlResponse = await axios.post(`${process.env.ML_SERVICE_URL}/intake/extract`, { text });
+      entities = mlResponse.data.entities;
+    }
 
-    // Step 2: Create a case record using extracted info
-    const clientName = entities.people[0] || 'Unknown';
+    // Step 2: create the case from the structured fields
+    const caseTitle = (title && title.trim())
+      || (opponent_name ? `${client_name.trim()} vs ${opponent_name.trim()}` : client_name.trim());
+
     const caseResult = await pool.query(
-     `INSERT INTO cases (title, client_name, case_type, status, created_by)
-      VALUES ($1, $2, $3, 'open', $4) RETURNING *`,
-     [title || 'Untitled Intake', clientName, 'general', req.user.id]
-    );   
-
+      `INSERT INTO cases
+         (title, client_name, client_phone, client_address, client_aadhaar_last4,
+          opponent_name, case_type, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8) RETURNING *`,
+      [
+        caseTitle,
+        client_name.trim(),
+        phone || null,
+        client_address ? client_address.trim() : null,
+        aadhaarLast4,
+        opponent_name ? opponent_name.trim() : null,
+        caseType,
+        req.user.id,
+      ]
+    );
     const newCase = caseResult.rows[0];
 
-    // Step 3: Save the raw intake text as a document linked to that case
+    // Step 3: save the intake as a document linked to the case
+    const content = (text && text.trim()) ||
+      `Client: ${client_name.trim()}\nOpponent: ${opponent_name || '-'}\nCase type: ${caseType}`;
     const docResult = await pool.query(
       `INSERT INTO documents (case_id, title, content, doc_type)
        VALUES ($1, $2, $3, 'intake') RETURNING *`,
-      [newCase.id, 'Intake Form Submission', text]
+      [newCase.id, 'Intake Form Submission', content]
     );
-    // Notify all connected dashboards in real time
+
+    // Notify connected dashboards in real time
     const io = req.app.get('io');
     io.emit('new_case', { case: newCase, document: docResult.rows[0] });
-    
+
     res.json({
       message: 'Intake processed successfully',
       case: newCase,
       document: docResult.rows[0],
-      extracted_entities: entities
+      extracted_entities: entities,
     });
-
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Failed to process intake', details: err.message });
