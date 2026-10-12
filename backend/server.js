@@ -13,6 +13,7 @@ app.use('/api/auth', authRoutes);
 
 const intakeRoutes = require('./routes/intake');
 app.use('/api', intakeRoutes);
+app.use('/api', require('./routes/invites'));
 
 const notetakerRoutes = require('./routes/notetaker');
 app.use('/api/notetaker', notetakerRoutes);

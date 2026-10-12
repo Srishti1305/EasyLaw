@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { QRCodeSVG } from 'qrcode.react';
 
 type CaseRow = {
   id: string;
@@ -44,6 +45,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [meetings, setMeetings] = useState<MeetingNote[]>([]);
+  const [inviteLink, setInviteLink] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Auth check + figure out if this user is an admin
   useEffect(() => {
@@ -156,6 +160,33 @@ setMeetings(meetingsRes.data);
       alert(err.response?.data?.error || 'Failed to delete case');
     }
   };
+    const createInvite = async () => {
+    setInviteLoading(true);
+    setCopied(false);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/invites`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setInviteLink(`${window.location.origin}/client-intake/${res.data.token}`);
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Could not create the link');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
 
   return (
     <main className="min-h-screen px-6 py-10 md:px-16">
@@ -189,6 +220,13 @@ setMeetings(meetingsRes.data);
           >
             New intake
           </a>
+          <button
+            onClick={createInvite}
+            disabled={inviteLoading}
+            className="text-sm text-[var(--color-brass)] hover:text-[var(--color-brass-light)] transition-colors disabled:opacity-50"
+          >
+            {inviteLoading ? 'Creating…' : 'Share intake form'}
+          </button>
          
           <a
             href="/notetaker"
@@ -347,6 +385,42 @@ setMeetings(meetingsRes.data);
     </div>
   )}
 </div>
+      {inviteLink && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50"
+          onClick={() => setInviteLink('')}
+        >
+          <div
+            className="bg-white rounded-xl p-6 max-w-sm w-full shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-serif-display text-xl text-[var(--color-ink)] mb-1">
+              Client intake form
+            </h3>
+            <p className="text-sm text-[var(--color-slate)] mb-4">
+              Ask your client to scan this code. It works once and expires in 7 days.
+            </p>
+            <div className="flex justify-center mb-4">
+              <QRCodeSVG value={inviteLink} size={200} />
+            </div>
+            <p className="text-xs text-[var(--color-slate)] break-all mb-4">{inviteLink}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={copyInvite}
+                className="flex-1 bg-[var(--color-ink)] text-white py-2 rounded-lg text-sm"
+              >
+                {copied ? 'Copied ✓' : 'Copy link'}
+              </button>
+              <button
+                onClick={() => setInviteLink('')}
+                className="flex-1 border border-[var(--color-line)] py-2 rounded-lg text-sm text-[var(--color-ink)]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </main>
   );
